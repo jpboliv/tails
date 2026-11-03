@@ -4,9 +4,18 @@
   "private": true,
   "description": "Standalone requirement tracking, spec reports, and project-configured agent skills.",
   "type": "module",
-  "bin": { "tails": "dist/src/cli.js" },
-  "files": ["dist/src/**/*.js", "schemas/*.json", "skills/*/SKILL.md", "examples/feature-flags"],
-  "engines": { "node": ">=20" },
+  "bin": {
+    "tails": "dist/src/cli.js"
+  },
+  "files": [
+    "dist/src/**/*.js",
+    "schemas/*.json",
+    "skills/*/SKILL.md",
+    "examples/feature-flags"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/test/*.test.js scripts/*.test.mjs",
