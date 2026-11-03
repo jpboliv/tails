@@ -1,0 +1,75 @@
+name: CLI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Exact release commit to test
+        required: true
+        type: string
+      release-tag:
+        description: Release tag whose version must match the package
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every supported Node.js version on Linux. One macOS job catches path and symlink
+        # differences (/var is /private/var there); Node.js versions do not differ by OS.
+        os: [ubuntu-latest]
+        node: [20, 22, 24]
+        include:
+          - os: macos-latest
+            node: 24
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: cli/package-lock.json
+      - name: Check release versions
+        if: ${{ inputs.release-tag != '' }}
+        env:
+          RELEASE_TAG: ${{ inputs.release-tag }}
+        run: node scripts/release.mjs verify "$RELEASE_TAG"
+      - run: npm ci
+      - run: npm test
+      - run: npm run test:package
+
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cli/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser

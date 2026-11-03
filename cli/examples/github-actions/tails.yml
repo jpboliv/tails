@@ -1,0 +1,51 @@
+# Sample workflow for a spec repository. Not enabled:
+# copy it to .github/workflows/tails.yml in the spec repo to turn it on.
+# Set the TAILS_REF repository variable to the full commit SHA of the release to use.
+# Set TAILS_READ_TOKEN to a token with read access if the Tails repository is private.
+# It publishes only as a CI artifact and the job summary (D7, INV-11). It never deploys Pages.
+name: tails
+on:
+  pull_request:
+    paths: ["prds/**", "tdds/**", "test-case-specs/**", ".tails.yml", ".tails/**"]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Check the pinned Tails revision
+        env: { TAILS_REF: "${{ vars.TAILS_REF }}" }
+        run: |
+          if [[ ! "$TAILS_REF" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo 'Set the TAILS_REF repository variable to a full Tails release commit SHA.' >&2
+            exit 2
+          fi
+      - uses: actions/checkout@v4
+        with: { repository: jpboliv/tails, ref: "${{ vars.TAILS_REF }}", path: .tails-cli, token: "${{ secrets.TAILS_READ_TOKEN || github.token }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Build tails
+        working-directory: .tails-cli/cli
+        run: npm ci && npm run build
+      - name: Report
+        run: node .tails-cli/cli/dist/src/cli.js report --repo . --out tails-report
+      - name: Review the spec change
+        if: github.event_name == 'pull_request'
+        # The review goes first in the summary: it says what blocks the merge. It fails the job
+        # on a blocker, after the summary is written.
+        env: { BASE_REF: "${{ github.base_ref }}" }
+        run: |
+          status=0
+          node .tails-cli/cli/dist/src/cli.js review --repo . --base "origin/$BASE_REF" --head HEAD --out tails-report/review.md || status=$?
+          cat tails-report/review.md >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+      - name: Drift summary
+        if: always()
+        run: cat tails-report/drift.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: tails-report, path: tails-report }

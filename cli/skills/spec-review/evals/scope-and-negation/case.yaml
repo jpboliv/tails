@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: scope-and-negation
+expected_outcome: |
+  The report identifies the delete-permission contradiction with both source lines.
+  It does not flag the rejected scheduled-email alternative as planned scope.
+  It says test coverage cannot be established from the supplied inputs.

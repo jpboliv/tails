@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: unverified-runtime
+expected_outcome: |
+  FR-1.1 deviates because the implementation returns 400 instead of 422, with source evidence.
+  FR-1.2 is not checkable because a test file does not establish peak-load runtime behavior.
+  The report makes no claim of passing tests or deployment.
