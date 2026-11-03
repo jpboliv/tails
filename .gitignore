@@ -1,0 +1,9 @@
+# Dependencies and generated reports
+node_modules/
+*.tgz
+tails-report/
+
+# Local environment
+.env
+.env.*
+.DS_Store

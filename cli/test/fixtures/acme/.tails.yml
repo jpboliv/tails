@@ -1,0 +1,5 @@
+# Synthetic fixture. Exercises config, a matrix with a PRD column, and DR-1, DR-4, DR-5, DR-6.
+drift:
+  aliases:
+    export: [csv]
+  stop_words: [report]

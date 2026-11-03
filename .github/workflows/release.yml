@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing draft tag to retry (leave empty to update release PRs)
+        required: false
+        type: string
+
+# Keep draft creation, validation and publication in one run. Tags made with
+# GITHUB_TOKEN do not start a second workflow.
+concurrency:
+  group: tails-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      tag: ${{ steps.target.outputs.tag }}
+      sha: ${{ steps.target.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Check Release Please credentials
+        if: ${{ inputs.tag == '' }}
+        env:
+          RELEASE_PLEASE_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: |
+          if [[ -z "$RELEASE_PLEASE_TOKEN" ]]; then
+            echo 'Set RELEASE_PLEASE_TOKEN as described in docs/releases.md so release PRs trigger CI.' >&2
+            exit 1
+          fi
+      - uses: googleapis/release-please-action@8b8fd2cc23b2e18957157a9d923d75aa0c6f6ad5 # v4.4.1
+        if: ${{ inputs.tag == '' }}
+        id: release
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          target-branch: main
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+      - name: Resolve the draft's exact commit
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || steps.release.outputs['cli--tag_name'] }}
+          RELEASE_SHA: ${{ steps.release.outputs['cli--sha'] }}
+        run: node cli/scripts/release.mjs prepare
+
+  validate:
+    needs: prepare
+    if: ${{ needs.prepare.outputs.tag != '' }}
+    uses: ./.github/workflows/cli.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+      release-tag: ${{ needs.prepare.outputs.tag }}
+
+  publish:
+    needs: [prepare, validate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cli/package-lock.json
+      - run: npm ci
+        working-directory: cli
+      - name: Build and install-test the release archive
+        working-directory: cli
+        env:
+          RELEASE_ASSETS: ${{ runner.temp }}/tails-release
+        run: npm run test:package -- --tag "$RELEASE_TAG" --out "$RELEASE_ASSETS"
+      - name: Attach verified assets and publish the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ASSETS: ${{ runner.temp }}/tails-release
+        run: node cli/scripts/release.mjs publish

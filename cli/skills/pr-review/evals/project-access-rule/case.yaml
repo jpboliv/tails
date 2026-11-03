@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: project-access-rule
+expected_outcome: |
+  The review reports cross-account export access at line 3 with a concrete trigger and impact.
+  It respects the project's intentional error key and reports that tests were not run.
