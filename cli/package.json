@@ -1,6 +1,6 @@
 {
   "name": "tails",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Standalone requirement tracking, spec reports, and project-configured agent skills.",
   "type": "module",
