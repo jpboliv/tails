@@ -290,7 +290,7 @@ a.ref:hover{text-decoration:none;border-color:var(--line-strong)}
 .md thead th{font-size:12.5px;font-weight:600;color:var(--text);background:var(--panel);border-top:0;vertical-align:bottom}
 .md tbody tr:nth-child(2n){background:color-mix(in srgb,var(--panel) 55%,transparent)}
 .md tbody tr:hover{background:var(--hover)}
-.md td:first-child{white-space:nowrap;min-width:0}
+.md td:first-child{min-width:0}
 .md th.a-c,.md td.a-c{text-align:center}.md th.a-r,.md td.a-r{text-align:right}
 .md tr{scroll-margin-top:72px}
 .md a.idref{font-weight:500;white-space:nowrap;text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--link) 35%,transparent);text-underline-offset:2px}
