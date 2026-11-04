@@ -108,9 +108,8 @@ const FAMILIES: readonly FamilySpec[] = [
     ambiguous: false,
   },
   {
-    // A TDD contract record: `- **FF-API-05** rule`. Same shape and scope as a
-    // matrix row, so a citation of either resolves by its ID. The loose form wants a digit after the
-    // second dash, so a bold label in prose is never read as a broken ID.
+    // Long records share matrix-row identities. Short records need a declared document prefix;
+    // otherwise standard names such as ISO-8601 are indistinguishable from record IDs.
     family: "REC",
     name: "record",
     positions: [{ at: "bullet", docs: ["tdd"] }, { at: "heading", docs: ["tdd"] }, { at: "cell", docs: ["tdd"], firstHeader: ID_HEADER }],
@@ -173,7 +172,7 @@ export type DefinitionCheck =
 export function checkDefinition(
   firstWord: string,
   at: Position["at"],
-  context: { readonly sections: readonly string[]; readonly firstHeader?: string; readonly kind?: DocKind },
+  context: { readonly sections: readonly string[]; readonly firstHeader?: string; readonly kind?: DocKind; readonly bold?: boolean; readonly recordPrefixes?: ReadonlySet<string> },
 ): DefinitionCheck {
   const word = firstWord.replace(/[:,;]$/, "");
   for (const spec of FAMILIES) {
@@ -187,6 +186,11 @@ export function checkDefinition(
       return true;
     });
     if (!fits || !spec.loose.test(firstWord)) continue;
+    if (spec.family === "REC") {
+      if (at === "heading" && !context.bold) continue;
+      const shortPrefix = /^([A-Z][A-Z0-9]*)-\d/.exec(word)?.[1];
+      if (shortPrefix && at !== "cell" && !context.recordPrefixes?.has(shortPrefix)) continue;
+    }
     if (spec.strict.test(word)) return { kind: "defines", id: word, family: spec.family };
     return { kind: "malformed", text: firstWord, family: spec.family };
   }

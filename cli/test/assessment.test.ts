@@ -2,8 +2,26 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseAssessment } from "../src/assessment.js";
 import { assessment, deviating, RESULT_KEY } from "./assessment-fixture.js";
+import { execFileSync } from "node:child_process";
 
 const parse = (value: unknown) => parseAssessment(JSON.stringify(value), "review.json");
+
+test("loading the CLI defers schema compilation until an assessment is parsed", () => {
+  execFileSync(process.execPath, ["--input-type=module", "-e", `
+    import assert from "node:assert/strict";
+    import { createRequire } from "node:module";
+    const { Ajv } = createRequire(${JSON.stringify(import.meta.url)})("ajv");
+    let compilations = 0;
+    const compile = Ajv.prototype.compile;
+    Ajv.prototype.compile = function (...args) { compilations++; return compile.apply(this, args); };
+    await import(${JSON.stringify(new URL("../src/cli.js", import.meta.url).href)});
+    assert.equal(compilations, 0);
+    const { parseAssessment } = await import(${JSON.stringify(new URL("../src/assessment.js", import.meta.url).href)});
+    parseAssessment(${JSON.stringify(JSON.stringify(assessment()))}, "result.json");
+    parseAssessment(${JSON.stringify(JSON.stringify(assessment()))}, "result.json");
+    assert.equal(compilations, 1);
+  `]);
+});
 
 test("assessment contract preserves both decision options and refuses misleading overall verdicts", () => {
   const a = deviating();

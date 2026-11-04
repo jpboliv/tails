@@ -1,5 +1,5 @@
 // Assessment boundary: schema validation followed by cross-reference and verdict consistency checks.
-import { Ajv } from "ajv";
+import { Ajv, type ValidateFunction } from "ajv";
 import { readFileSync } from "node:fs";
 import { TailsInputError } from "./model.js";
 
@@ -65,13 +65,15 @@ export interface Assessment {
   readonly not_checked: readonly { readonly source: string; readonly reason: string }[];
 }
 
-const schema = JSON.parse(readFileSync(new URL("../../schemas/tails.verdict-2.schema.json", import.meta.url), "utf8"));
-const validate = new Ajv({ allErrors: true, strict: true }).compile<Assessment>(schema);
+let validate: ValidateFunction<Assessment> | undefined;
 
 export function parseAssessment(text: string, file: string): Assessment {
   const fail = (message: string): never => { throw new TailsInputError(`${file}: ${message}`); };
   let raw: unknown;
   try { raw = JSON.parse(text); } catch { return fail("not valid JSON"); }
+  validate ??= new Ajv({ allErrors: true, strict: true }).compile<Assessment>(
+    JSON.parse(readFileSync(new URL("../../schemas/tails.verdict-2.schema.json", import.meta.url), "utf8")),
+  );
   if (!validate(raw)) return fail(validate.errors!.slice(0, 5).map((e) => `${e.instancePath || "/"} ${e.message}`).join("; "));
   const a = raw;
   const unique = <T>(items: readonly T[], key: (x: T) => string, kind: string): Map<string, T> => {

@@ -217,11 +217,11 @@ Tails finds IDs in the documents and follows the links between them.
 | --- | --- | --- |
 | Requirement | `FR-1.1` | A PRD list item or heading |
 | Test case | `TC-01` | A heading, or a table row whose first column is `Test case` or `ID` |
-| Record | `FF-API-05`, `WL-01` | A TDD bullet or heading starting with the ID; bullets use bold IDs. `**A-B-1**, **C-D-2**` defines both. |
+| Record | `FF-API-05`, `WL-01` | A TDD bullet or heading starting with a bold ID, or an `ID` table column. Short IDs need the namespace described below. `**A-B-1**, **C-D-2**` defines both. |
 | Matrix row | `BK-API-42` | The first cell of a table whose first column is `ID` |
 | Decision, invariant, open question | `D3`, `INV-2`, `Q-1` | The first cell of a table in the matching section |
 
-A test case covers a requirement in one of two ways:
+A test case covers a requirement in these ways:
 
 - a `**Covers:** FR-1.1, FR-1.2` line under the test case
 - a test-case table with `Test case`, `Covers`, and the case's steps/expected outcome
@@ -238,10 +238,17 @@ A record in the TDD that names a requirement, such as `(PRD FR-1.1)`, counts as 
 A retired requirement keeps its ID but needs no design and no test.
 
 Long record IDs (`PREFIX-AREA-n`) are unique across the index. Short IDs (`WL-01`) are scoped to
-their document. A short reference is treated as a record only when its group defines that prefix;
+their document. Declare a short namespace once with an inline-code form such as `WL-<n>` in the
+reading guide. A `_Verify (WL-01):_` note or a definition in an `ID` column also establishes that
+namespace. A single declared record is enough. Bold alone does not make an ambiguous short label
+such as `ISO-8601` a record, and ordinary headings such as `HTTP-2 transport` stay prose.
+A short reference is treated as a record only when its group defines that prefix;
 ordinary ticket references remain unindexed. Ambiguous cross-document short references stay unresolved.
 Records include their nested prose, tables, code blocks and every `_Verify` paragraph naming the
 ID. Changes to that contract or its verification instructions appear in revision comparisons.
+Record `text_hash` values therefore differ from older indexes, including on unchanged documents.
+Consumers that persist indexes should rebuild them; built-in drift rules do not use record hashes
+in acceptance fingerprints.
 
 ## What Tails checks
 
@@ -409,16 +416,28 @@ checks can remain. Test source is not proof of a passing run or deployment.
 On refresh, code and linked GitHub spec revisions are compared with each assessment. Changed inputs
 make it **outdated**. Sources Tails cannot refresh, including tracker documents and ticket content,
 make it **unverified**. All evidence remains readable, but only current, latest assessments contribute
-to the breakdown. A newer review supersedes older reviews of the same PR; different PR outcomes stay
+to current outcomes. The breakdown links every review with its freshness, including reported outcomes
+whose inputs are unverified. Code/spec freshness is shown separately from overall input verification;
+unchanged code does not establish that ticket scope is unchanged. The PR list distinguishes absent
+reviews, changed revisions, and retained reviews needing input verification.
+A newer review supersedes older reviews of the same PR; different PR outcomes stay
 visible as **Mixed PR outcomes**. Requirements and PRs without current assessments remain unassessed.
 The breakdown describes reviewed PR scopes, not whole-feature delivery.
+Its requirement list always uses accepted baselines, including before the first assessment import.
+Proposal-only requirements remain in the document views until an accepted baseline exists.
 
 Assessments live in `~/tails-documentation/assessments/<feature>/` and survive report regeneration.
 The report exports their freshness and retained results in `assessments.json`. Malformed or duplicate
 spec IDs still appear as indexing errors; imported assessments and their spec defects remain readable.
+Stored results with invalid JSON or incompatible contracts are retained and reported as unreadable;
+valid assessments still render. Diagnostics are also exported in `assessment-errors.json`.
 The older `tails.verdict/1` schema remains packaged, but new conformance handoffs and imports use v2.
 
 ## Develop Tails
+
+Conformance imports use Ajv to validate the packaged JSON Schema, then check semantic relationships
+in TypeScript. This keeps the published contract and structural validation aligned. The validator
+compiles once, on the first assessment parse. The existing drift-result validator remains separate.
 
 ```sh
 cd cli

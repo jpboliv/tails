@@ -14,7 +14,7 @@ import { browseControls, browseEmpty, icon } from "./workspace.js";
 import { posix } from "node:path";
 import { compareBy, gist, oneLine, plural } from "./util.js";
 import { assessmentSummary, conformancePage } from "./assessment-site.js";
-import type { AssessmentRun } from "./feature-assessments.js";
+import type { AssessmentRun, UnreadableAssessment } from "./feature-assessments.js";
 
 export const pageFor = (doc: string) => doc.replace(/\.md$/i, ".html");
 export const sourcePageFor = (doc: string) => doc.replace(/\.md$/i, ".source.html");
@@ -56,6 +56,7 @@ export interface FeatureView {
   readonly readAt: string;
   readonly assessments?: readonly AssessmentRun[];
   readonly assessmentIndex?: SpecIndex;
+  readonly unreadableAssessments?: readonly UnreadableAssessment[];
 }
 
 function sourceLabel(index: SpecIndex): string {
@@ -553,7 +554,7 @@ export function renderSite(index: SpecIndex, sources: readonly SourceDoc[], find
   files.set("index.html", overview(ctx));
   files.set("drift.html", findingsHtml(ctx));
   files.set("docs.html", docsHtml(ctx));
-  if (feature) files.set("conformance.html", conformancePage(feature.assessmentIndex ?? index, feature.assessments ?? [], feature.feature.spec.name, feature.feature.implementation.map((p) => `${p.repo}#${p.number}`)));
+  if (feature) files.set("conformance.html", conformancePage(feature.assessmentIndex ?? index, feature.assessments ?? [], feature.feature.spec.name, feature.feature.implementation.map((p) => `${p.repo}#${p.number}`), feature.unreadableAssessments));
   for (const e of ctx.epics) files.set(epicPage(e.group), epicHtml(ctx, e));
   for (const e of index.entries) files.set(idPage(e), idHtml(ctx, e, reqOf.get(e.key)));
   for (const src of sources) {

@@ -23,8 +23,13 @@ export interface StoredAssessment {
 }
 export interface AssessmentRun extends StoredAssessment {
   readonly freshness: "current" | "outdated" | "unverified";
+  readonly codeSpecFreshness: AssessmentRun["freshness"];
   readonly reasons: readonly string[];
   readonly superseded: boolean;
+}
+export interface UnreadableAssessment {
+  readonly id: string;
+  readonly error: string;
 }
 export interface AssessedRequirement {
   readonly key: string;
@@ -32,7 +37,7 @@ export interface AssessedRequirement {
   readonly source: string;
   readonly text: string;
   readonly outcome: Outcome | "mixed" | "unassessed";
-  readonly evidence: readonly { readonly run: string; readonly pr: string; readonly result: AssessmentResult }[];
+  readonly evidence: readonly { readonly run: string; readonly pr: string; readonly result: AssessmentResult; readonly freshness: AssessmentRun["freshness"]; readonly superseded: boolean }[];
 }
 
 function assessmentDir(home: string, slug: string): string {
@@ -45,16 +50,24 @@ function assessmentDir(home: string, slug: string): string {
   return join(home, "assessments", slug);
 }
 
-export function readAssessments(home: string, slug: string): StoredAssessment[] {
+export function readAssessments(home: string, slug: string): { assessments: StoredAssessment[]; unreadable: UnreadableAssessment[] } {
   const dir = assessmentDir(home, slug);
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir).filter((p) => /^[a-f0-9]{64}\.json$/.test(p)).sort().map((p) => {
+  const assessments: StoredAssessment[] = [];
+  const unreadable: UnreadableAssessment[] = [];
+  if (!existsSync(dir)) return { assessments, unreadable };
+  for (const p of readdirSync(dir).filter((p) => /^[a-f0-9]{64}\.json$/.test(p)).sort()) {
     const file = join(dir, p);
     if (lstatSync(file).isSymbolicLink()) throw new TailsInputError(`${file}: assessment files must not be symbolic links`);
     const report = file.replace(/\.json$/, ".md");
     if (existsSync(report) && lstatSync(report).isSymbolicLink()) throw new TailsInputError(`${report}: assessment files must not be symbolic links`);
-    return { id: p.slice(0, -5), assessment: parseAssessment(readFileSync(file, "utf8"), file), report: existsSync(report) ? readFileSync(report, "utf8") : null };
-  });
+    try {
+      assessments.push({ id: p.slice(0, -5), assessment: parseAssessment(readFileSync(file, "utf8"), file), report: existsSync(report) ? readFileSync(report, "utf8") : null });
+    } catch (e) {
+      if (!(e instanceof TailsInputError)) throw e;
+      unreadable.push({ id: p.slice(0, -5), error: e.message });
+    }
+  }
+  return { assessments, unreadable };
 }
 
 export function importAssessment(home: string, slug: string, file: string, reportFile?: string): string {
@@ -129,11 +142,17 @@ export function assessFreshness(stored: readonly StoredAssessment[], feature: Fe
     const reasons: string[] = [];
     let outdated = false;
     let unverified = false;
+    let ticketUnverified = false;
     const pr = feature.implementation.find((p) => `${p.repo}#${p.number}` === prKey(a.pr));
     if (!pr) { unverified = true; reasons.push("PR is no longer linked to this feature."); }
     else if (pr.headSha !== a.pr.head_sha) { outdated = true; reasons.push("Implementation head changed since this review."); }
     for (const source of a.sources) {
-      const now = snapshots.find((s) => s.location === source.location && s.purpose === source.purpose);
+      if (source.kind === "ticket") {
+        ticketUnverified = true;
+        reasons.push(`${source.location}: ticket scope is unverified; reviewed ${source.revision}. Tails cannot refresh ticket sources.`);
+        continue;
+      }
+      const now = snapshots.find((s) => s.location === source.location && s.purpose === source.purpose && s.kind === source.kind);
       if (!now) {
         unverified = true;
         reasons.push(`${source.location}: current revision is unavailable; reviewed ${source.revision}.`);
@@ -143,13 +162,14 @@ export function assessFreshness(stored: readonly StoredAssessment[], feature: Fe
       }
     }
     const superseded = stored.some((other) => prKey(other.assessment.pr) === prKey(a.pr) && Date.parse(other.assessment.checked_at) > Date.parse(a.checked_at));
-    return { ...run, freshness: outdated ? "outdated" : unverified ? "unverified" : "current", reasons, superseded };
+    const codeSpecFreshness = outdated ? "outdated" : unverified ? "unverified" : "current";
+    return { ...run, codeSpecFreshness, freshness: codeSpecFreshness === "current" && ticketUnverified ? "unverified" : codeSpecFreshness, reasons, superseded };
   });
 }
 
 /** Combine explicit PR-scoped evidence. Unknown, old and superseded runs never turn a row green. */
 export function assessedRequirements(index: SpecIndex, runs: readonly AssessmentRun[]): AssessedRequirement[] {
-  const rows = new Map<string, { id: string; source: string; text: string; evidence: { run: string; pr: string; result: AssessmentResult }[] }>();
+  const rows = new Map<string, { id: string; source: string; text: string; evidence: AssessedRequirement["evidence"][number][] }>();
   for (const entry of index.entries) {
     if (!["FR", "REC", "MATRIX", "TC"].includes(entry.family) || (entry.family === "FR" && (!entry.id.includes(".") || isRetired(entry.text)))) continue;
     rows.set(`${entry.doc}#${entry.id}`, { id: entry.id, source: entry.doc, text: entry.text, evidence: [] });
@@ -157,12 +177,13 @@ export function assessedRequirements(index: SpecIndex, runs: readonly Assessment
   for (const run of runs) for (const result of run.assessment.results) {
     const source = run.assessment.sources.find((s) => s.key === result.source)!;
     const row = rows.get(result.key) ?? { id: result.id, source: source.location, text: result.requirement, evidence: [] };
-    if (run.freshness === "current" && !run.superseded) row.evidence.push({ run: run.id, pr: prKey(run.assessment.pr), result });
+    row.evidence.push({ run: run.id, pr: prKey(run.assessment.pr), result, freshness: run.freshness, superseded: run.superseded });
     rows.set(result.key, row);
   }
   return [...rows].map(([key, row]): AssessedRequirement => {
-    const outcomes = new Set(row.evidence.map((e) => e.result.verdict));
-    const outcome = outcomes.size > 1 ? "mixed" : row.evidence[0]?.result.verdict ?? "unassessed";
+    const current = row.evidence.filter((e) => e.freshness === "current" && !e.superseded);
+    const outcomes = new Set(current.map((e) => e.result.verdict));
+    const outcome = outcomes.size > 1 ? "mixed" : current[0]?.result.verdict ?? "unassessed";
     return { key, ...row, outcome };
   }).sort((a, b) => a.key.localeCompare(b.key));
 }

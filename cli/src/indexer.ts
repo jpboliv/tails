@@ -21,6 +21,7 @@ import {
   type SpecIndex,
 } from "./model.js";
 import { compareBy, normalizeText, textHash } from "./util.js";
+import { matchNote } from "./reader.js";
 
 export interface SourceDoc {
   readonly path: DocPath;
@@ -99,6 +100,22 @@ function findEpic(text: string, blocks: readonly PlacedBlock[]): string | null {
 
 function parseDoc(src: SourceDoc, config: Config): ParsedDoc {
   const { lines, blocks } = readDocument(src.text);
+  // Explicit ID forms, verification notes and ID columns establish short-record namespaces.
+  const recordPrefixes = new Set<string>();
+  const declare = (id: string) => {
+    const prefix = /^([A-Z][A-Z0-9]*)-\d+$/.exec(id)?.[1];
+    if (prefix) recordPrefixes.add(prefix);
+  };
+  for (const { block } of blocks) {
+    for (const line of blockLines(block)) {
+      for (const match of line.text.matchAll(/`([A-Z][A-Z0-9]*)-<n>`/g)) recordPrefixes.add(match[1]!);
+      const note = matchNote(line.text);
+      if (note?.kind === "verify") note.ids.forEach(declare);
+    }
+    if (block.kind === "table" && /^id$/i.test(block.header[0] ?? "")) {
+      block.rows.forEach((row) => declare(firstWord(row.cells[0] ?? "")));
+    }
+  }
   const doc = src.path;
   const entries: Definition[] = [];
   const citations: RawCitation[] = [];
@@ -140,7 +157,7 @@ function parseDoc(src: SourceDoc, config: Config): ParsedDoc {
     const section = trail[trail.length - 1]?.text ?? "";
     switch (block.kind) {
       case "heading": {
-        const check = checkDefinition(firstWord(block.text), "heading", { sections, kind: src.kind });
+        const check = checkDefinition(firstWord(block.text), "heading", { sections, kind: src.kind, bold: /^\*\*[^*]+\*\*/.test(block.text), recordPrefixes });
         if (check.kind === "malformed") malformed(block.line, check.text, check.family);
         if (check.kind === "defines") {
           const key = define({ id: check.id, family: check.family, section, line: block.line, text: block.text });
@@ -155,7 +172,7 @@ function parseDoc(src: SourceDoc, config: Config): ParsedDoc {
         let from = owner(trail);
         const definedLabels: string[] = [];
         if (block.label !== null) {
-          const check = checkDefinition(block.label, "bullet", { sections, kind: src.kind });
+          const check = checkDefinition(block.label, "bullet", { sections, kind: src.kind, recordPrefixes });
           if (check.kind === "malformed") malformed(block.line, check.text, check.family);
           if (check.kind === "defines") {
             from = define({ id: check.id, family: check.family, section, line: block.line, text: block.text });
@@ -163,7 +180,7 @@ function parseDoc(src: SourceDoc, config: Config): ParsedDoc {
             // A record item can define several records together: `**FF-WEB-13**, **FF-MOB-16** …`.
             if (check.family === "REC") {
               for (const label of coLabels(block.lines[0]!.text)) {
-                const more = checkDefinition(label, "bullet", { sections, kind: src.kind });
+                const more = checkDefinition(label, "bullet", { sections, kind: src.kind, recordPrefixes });
                 if (more.kind === "malformed") malformed(block.line, more.text, more.family);
                 if (more.kind !== "defines" || more.family !== "REC") break;
                 define({ id: more.id, family: more.family, section, line: block.line, text: block.text });

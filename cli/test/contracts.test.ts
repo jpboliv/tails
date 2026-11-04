@@ -32,6 +32,40 @@ test("heading records define IDs and own their body references", () => {
   assert.ok(result.citations.some((c) => c.from === first.key && c.to === "EX-API-2"));
 });
 
+test("ordinary standard names are not records, including bold names and repeated headings", () => {
+  const result = index(doc("tdd", `# Design
+
+Record IDs: \`WL-<n>\`.
+
+## UTF-8 encoding
+## SHA-256 signatures
+## HTTP-2 transport
+### HTTP-2 fallbacks
+## HTTP-3 transport
+## OAUTH-2.0 flow
+## **ISO-8601** timestamps
+- **ISO-8601** dates use UTC.
+- **OAUTH-2.0** authentication.
+- **APP-42** is the implementation ticket.
+
+### **WL-01** Response
+Return 201.
+`));
+  assert.deepEqual(result.entries.map((e) => e.id), ["WL-01"]);
+  assert.deepEqual(result.citations, []);
+});
+
+test("a single short record needs explicit intent rather than a repeated-prefix heuristic", () => {
+  for (const text of [
+    "Record IDs: `WL-<n>`.\n\n- **WL-01** Return 201.",
+    "### **WL-01** Return 201.\n\n_Verify (WL-01):_ Assert the status.",
+    "| ID | Contract |\n| --- | --- |\n| WL-01 | Return 201. |",
+  ]) assert.deepEqual(index(doc("tdd", `# Design\n\n${text}\n`)).entries.map((e) => e.id), ["WL-01"]);
+  assert.deepEqual(index(doc("tdd", "# Design\n\n- **WL-01** Ambiguous label.\n")).entries, []);
+  assert.deepEqual(index(doc("tdd", "# Design\n\nRecord IDs: `WL-<n>`.\n\n### WL-01 Plain heading\n")).entries, []);
+  assert.throws(() => index(doc("tdd", "# Design\n\nRecord IDs: `WL-<n>`.\n\n### **WL-01.0** Broken record\n")), /malformed record ID/);
+});
+
 test("contract edits in nested tables, fenced code and shared verification are detected", () => {
   const source = "# Design\n\n- **EX-API-1** Response:\n\n  | Field | Value |\n  | --- | --- |\n  | status | 200 |\n\n  ```json\n  {\"limit\": 10}\n  ```\n\n- **EX-API-2** Errors return 422.\n\n_Verify (EX-API-1, EX-API-2):_ Assert both outcomes.\n";
   const base = index(doc("tdd", source));
@@ -49,8 +83,8 @@ test("contract edits in nested tables, fenced code and shared verification are d
 
 test("short IDs are scoped to their document and unrelated tickets do not become dangling records", () => {
   const result = index(
-    doc("tdd", "# A\n\n- **WL-01** A.\n\nSee WL-02 and APP-42.\n", "tdd/a.md"),
-    doc("tdd", "# B\n\n- **WL-01** B.\n", "tdd/b.md"),
+    doc("tdd", "# A\n\nRecord IDs: `WL-<n>`.\n\n- **WL-01** A.\n\nSee WL-02 and APP-42.\n", "tdd/a.md"),
+    doc("tdd", "# B\n\nRecord IDs: `WL-<n>`.\n\n- **WL-01** B.\n", "tdd/b.md"),
   );
   assert.equal(result.entries.length, 2);
   assert.deepEqual(result.citations.map((c) => c.id), ["WL-02"]);
