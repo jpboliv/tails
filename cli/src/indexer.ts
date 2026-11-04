@@ -2,8 +2,9 @@
 // document text, output is a SpecIndex. Reading files or git lives in repo.ts.
 import { posix } from "node:path";
 import type { Config } from "./config.js";
-import { checkDefinition, citationTokens, familySpec, prdColumn } from "./families.js";
-import { blockLines, readBlocks, type Heading, type PlacedBlock } from "./markdown.js";
+import { checkDefinition, citationTokens, familySpec, isShortRecord, prdColumn } from "./families.js";
+import { completeContracts } from "./contracts.js";
+import { blockLines, readDocument, type Heading, type PlacedBlock } from "./markdown.js";
 import {
   TailsInputError,
   type Citation,
@@ -20,6 +21,7 @@ import {
   type SpecIndex,
 } from "./model.js";
 import { compareBy, normalizeText, textHash } from "./util.js";
+import { matchNote } from "./reader.js";
 
 export interface SourceDoc {
   readonly path: DocPath;
@@ -54,7 +56,7 @@ interface ParsedDoc {
 }
 
 function keyFor(doc: DocPath, id: string, family: Family): IdKey {
-  return (familySpec(family).scope === "global" ? id : `${doc}#${id}`) as IdKey;
+  return (familySpec(family).scope === "global" && !isShortRecord(family, id) ? id : `${doc}#${id}`) as IdKey;
 }
 
 /** The bold labels after a bullet's first one, joined by a comma or "and": `**A**, **B** and **C**` gives B and C. */
@@ -64,7 +66,7 @@ function coLabels(line: string): string[] {
 }
 
 function firstWord(text: string): string {
-  return text.trim().split(/\s+/)[0] ?? "";
+  return text.trim().replace(/^\*\*([^*]+)\*\*/, "$1").split(/\s+/)[0] ?? "";
 }
 
 /** "7. Risks" gives "§7"; a heading without a number gives its text. */
@@ -97,7 +99,23 @@ function findEpic(text: string, blocks: readonly PlacedBlock[]): string | null {
 }
 
 function parseDoc(src: SourceDoc, config: Config): ParsedDoc {
-  const blocks = readBlocks(src.text);
+  const { lines, blocks } = readDocument(src.text);
+  // Explicit ID forms, verification notes and ID columns establish short-record namespaces.
+  const recordPrefixes = new Set<string>();
+  const declare = (id: string) => {
+    const prefix = /^([A-Z][A-Z0-9]*)-\d+$/.exec(id)?.[1];
+    if (prefix) recordPrefixes.add(prefix);
+  };
+  for (const { block } of blocks) {
+    for (const line of blockLines(block)) {
+      for (const match of line.text.matchAll(/`([A-Z][A-Z0-9]*)-<n>`/g)) recordPrefixes.add(match[1]!);
+      const note = matchNote(line.text);
+      if (note?.kind === "verify") note.ids.forEach(declare);
+    }
+    if (block.kind === "table" && /^id$/i.test(block.header[0] ?? "")) {
+      block.rows.forEach((row) => declare(firstWord(row.cells[0] ?? "")));
+    }
+  }
   const doc = src.path;
   const entries: Definition[] = [];
   const citations: RawCitation[] = [];
@@ -139,7 +157,7 @@ function parseDoc(src: SourceDoc, config: Config): ParsedDoc {
     const section = trail[trail.length - 1]?.text ?? "";
     switch (block.kind) {
       case "heading": {
-        const check = checkDefinition(firstWord(block.text), "heading", { sections });
+        const check = checkDefinition(firstWord(block.text), "heading", { sections, kind: src.kind, bold: /^\*\*[^*]+\*\*/.test(block.text), recordPrefixes });
         if (check.kind === "malformed") malformed(block.line, check.text, check.family);
         if (check.kind === "defines") {
           const key = define({ id: check.id, family: check.family, section, line: block.line, text: block.text });
@@ -154,7 +172,7 @@ function parseDoc(src: SourceDoc, config: Config): ParsedDoc {
         let from = owner(trail);
         const definedLabels: string[] = [];
         if (block.label !== null) {
-          const check = checkDefinition(block.label, "bullet", { sections, kind: src.kind });
+          const check = checkDefinition(block.label, "bullet", { sections, kind: src.kind, recordPrefixes });
           if (check.kind === "malformed") malformed(block.line, check.text, check.family);
           if (check.kind === "defines") {
             from = define({ id: check.id, family: check.family, section, line: block.line, text: block.text });
@@ -162,7 +180,7 @@ function parseDoc(src: SourceDoc, config: Config): ParsedDoc {
             // A record item can define several records together: `**FF-WEB-13**, **FF-MOB-16** …`.
             if (check.family === "REC") {
               for (const label of coLabels(block.lines[0]!.text)) {
-                const more = checkDefinition(label, "bullet", { sections, kind: src.kind });
+                const more = checkDefinition(label, "bullet", { sections, kind: src.kind, recordPrefixes });
                 if (more.kind === "malformed") malformed(block.line, more.text, more.family);
                 if (more.kind !== "defines" || more.family !== "REC") break;
                 define({ id: more.id, family: more.family, section, line: block.line, text: block.text });
@@ -205,7 +223,7 @@ function parseDoc(src: SourceDoc, config: Config): ParsedDoc {
         cite(block.line, block.header.join(" | "), owner(trail));
         for (const row of block.rows) {
           const first = row.cells[0] ?? "";
-          const check = checkDefinition(firstWord(first), "cell", { sections, firstHeader });
+          const check = checkDefinition(firstWord(first), "cell", { sections, firstHeader, kind: src.kind });
           if (check.kind === "malformed") malformed(row.line, check.text, check.family);
           let from = owner(trail);
           let skip = -1;
@@ -230,7 +248,8 @@ function parseDoc(src: SourceDoc, config: Config): ParsedDoc {
               cite(row.line, cell.slice(cell.indexOf(check.id) + check.id.length), from);
               return;
             }
-            const kind: LinkKind = check.kind === "defines" && check.family === "MATRIX" && (i === prdCol || i === sourceCol) ? "sources" : "cites";
+            const kind: LinkKind = check.kind === "defines" && check.family === "TC" && /^(covers|requirements?|frs?|prd)$/i.test(block.header[i] ?? "") ? "covers"
+              : check.kind === "defines" && check.family === "MATRIX" && (i === prdCol || i === sourceCol) ? "sources" : "cites";
             cite(row.line, cell, from, kind);
           });
         }
@@ -261,7 +280,15 @@ function parseDoc(src: SourceDoc, config: Config): ParsedDoc {
   }
   const title = (blocks.find((b) => b.block.kind === "heading" && b.block.level === 1)?.block as Heading | undefined)?.text ?? doc;
   const epic = config.epics[doc] ?? findEpic(src.text, blocks);
-  return { info: { path: doc, kind: src.kind, title, epic, ...(src.source ? { source: src.source } : {}) }, links, entries, citations, scopeRows, matrixTables };
+  const complete = completeContracts(lines, blocks, entries);
+  // Continuations of a bullet record own their prose/table citations as well as the opening line.
+  for (let i = 0; i < citations.length; i++) {
+    const c = citations[i]!;
+    if (c.from) continue;
+    const record = complete.find((e) => e.family === "REC" && e.line < c.line && (e.end_line ?? e.line) >= c.line);
+    if (record) citations[i] = { ...c, from: record.key };
+  }
+  return { info: { path: doc, kind: src.kind, title, epic, ...(src.source ? { source: src.source } : {}) }, links, entries: complete, citations, scopeRows, matrixTables };
 }
 
 /** Docs are grouped when they share an epic or one links to another. */
@@ -317,17 +344,22 @@ export function buildIndex(sources: readonly SourceDoc[], config: Config, option
 
   const resolve = (c: RawCitation): IdKey | null => {
     const spec = familySpec(c.family);
-    if (spec.scope === "global") return byKey.has(c.id as IdKey) ? (c.id as IdKey) : null;
+    if (spec.scope === "global" && !isShortRecord(c.family, c.id)) return byKey.has(c.id as IdKey) ? (c.id as IdKey) : null;
     const same = keyFor(c.doc, c.id, c.family);
     if (byKey.has(same)) return same;
     if (spec.home === "same") return null;
     const group = groups.get(c.doc);
     const home = docs.filter((d) => d.group === group && d.kind === spec.home).map((d) => keyFor(d.path, c.id, c.family));
-    return home.find((k) => byKey.has(k)) ?? null;
+    const matches = home.filter((k) => byKey.has(k));
+    return isShortRecord(c.family, c.id) && matches.length !== 1 ? null : matches[0] ?? null;
   };
 
   const citations: Citation[] = [];
   for (const c of parsed.flatMap((p) => p.citations)) {
+    if (isShortRecord(c.family, c.id)) {
+      const prefix = c.id.replace(/\d+$/, "");
+      if (!entries.some((e) => isShortRecord(e.family, e.id) && e.id.startsWith(prefix) && groups.get(e.doc) === groups.get(c.doc))) continue;
+    }
     const to = resolve(c);
     if (to === null && familySpec(c.family).ambiguous && !familiesInGroup.get(groups.get(c.doc)!)?.has(c.family)) continue;
     citations.push({ ...c, to });

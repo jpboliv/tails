@@ -3,11 +3,11 @@
 import type { DocKind, Family } from "./model.js";
 
 export type Position =
-  | { readonly at: "heading" }
+  | { readonly at: "heading"; readonly docs?: readonly DocKind[] }
   /** A bullet that opens with a bold label, in any document or only in the kinds listed. */
   | { readonly at: "bullet"; readonly docs?: readonly DocKind[] }
   /** First word of a table row's first cell, in a matching section or under a matching first header. */
-  | { readonly at: "cell"; readonly section?: RegExp; readonly firstHeader?: RegExp };
+  | { readonly at: "cell"; readonly docs?: readonly DocKind[]; readonly section?: RegExp; readonly firstHeader?: RegExp };
 
 export interface FamilySpec {
   readonly family: Family;
@@ -40,7 +40,7 @@ const FAMILIES: readonly FamilySpec[] = [
   {
     family: "TC",
     name: "test case",
-    positions: [{ at: "heading" }],
+    positions: [{ at: "heading" }, { at: "cell", docs: ["tcs"], firstHeader: /^(?:id|test[ -]?case)$/i }],
     loose: /^TC-\S*/,
     strict: /^TC-\d+$/,
     home: "tcs",
@@ -108,14 +108,13 @@ const FAMILIES: readonly FamilySpec[] = [
     ambiguous: false,
   },
   {
-    // A TDD contract record: `- **FF-API-05** rule`. Same shape and scope as a
-    // matrix row, so a citation of either resolves by its ID. The loose form wants a digit after the
-    // second dash, so a bold label in prose is never read as a broken ID.
+    // Long records share matrix-row identities. Short records need a declared document prefix;
+    // otherwise standard names such as ISO-8601 are indistinguishable from record IDs.
     family: "REC",
     name: "record",
-    positions: [{ at: "bullet", docs: ["tdd"] }],
-    loose: /^[A-Z][A-Z0-9]*-[A-Z][A-Z0-9]*-\d\S*/,
-    strict: /^[A-Z][A-Z0-9]*-[A-Z][A-Z0-9]*-\d+$/,
+    positions: [{ at: "bullet", docs: ["tdd"] }, { at: "heading", docs: ["tdd"] }, { at: "cell", docs: ["tdd"], firstHeader: ID_HEADER }],
+    loose: /^[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)?-\d\S*/,
+    strict: /^[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)?-\d+$/,
     home: "tdd",
     scope: "global",
     ambiguous: false,
@@ -129,7 +128,10 @@ export function familySpec(family: Family): FamilySpec {
 }
 
 /** ID-shaped tokens in running text. Order matters: the first family whose strict pattern matches wins. */
-const CITATION = /(?<![\w-])(FR-\d+(?:\.\d+)?|INV-\d+|TC-\d+|Q-\d+|SC-\d+|D\d+|S\d+|[A-Z][A-Z0-9]*-[A-Z][A-Z0-9]*-\d+)(?![\w-]|\.\d)/g;
+const CITATION = /(?<![\w-])(FR-\d+(?:\.\d+)?|INV-\d+|TC-\d+|Q-\d+|SC-\d+|D\d+|S\d+|[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)?-\d+)(?![\w-]|\.\d)/g;
+
+/** Short record IDs are document-scoped; an ordinary ticket reference is not a record citation. */
+export const isShortRecord = (family: Family, id: string): boolean => family === "REC" && /^[A-Z][A-Z0-9]*-\d+$/.test(id);
 
 export interface Token {
   readonly id: string;
@@ -170,19 +172,25 @@ export type DefinitionCheck =
 export function checkDefinition(
   firstWord: string,
   at: Position["at"],
-  context: { readonly sections: readonly string[]; readonly firstHeader?: string; readonly kind?: DocKind },
+  context: { readonly sections: readonly string[]; readonly firstHeader?: string; readonly kind?: DocKind; readonly bold?: boolean; readonly recordPrefixes?: ReadonlySet<string> },
 ): DefinitionCheck {
   const word = firstWord.replace(/[:,;]$/, "");
   for (const spec of FAMILIES) {
     const fits = spec.positions.some((p) => {
       if (p.at !== at) return false;
-      if (p.at === "bullet") return !p.docs || (context.kind !== undefined && p.docs.includes(context.kind));
+      if (p.docs && (context.kind === undefined || !p.docs.includes(context.kind))) return false;
+      if (p.at === "bullet") return true;
       if (p.at !== "cell") return true;
       if (p.section && !context.sections.some((s) => p.section!.test(s))) return false;
       if (p.firstHeader && !(context.firstHeader !== undefined && p.firstHeader.test(context.firstHeader))) return false;
       return true;
     });
     if (!fits || !spec.loose.test(firstWord)) continue;
+    if (spec.family === "REC") {
+      if (at === "heading" && !context.bold) continue;
+      const shortPrefix = /^([A-Z][A-Z0-9]*)-\d/.exec(word)?.[1];
+      if (shortPrefix && at !== "cell" && !context.recordPrefixes?.has(shortPrefix)) continue;
+    }
     if (spec.strict.test(word)) return { kind: "defines", id: word, family: spec.family };
     return { kind: "malformed", text: firstWord, family: spec.family };
   }

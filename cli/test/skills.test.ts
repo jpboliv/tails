@@ -151,7 +151,7 @@ test("invalid skill configuration names the offending choice", () => {
 
 test("handoffs use the role's output contract and never invent an assessment", () => {
   const repo = tmp();
-  for (const [role, schema] of [["spec-review", "tails.drift/1"], ["conformance", "tails.verdict/1"], ["pr-review", null]] as const) {
+  for (const [role, schema] of [["spec-review", "tails.drift/1"], ["conformance", "tails.verdict/2"], ["pr-review", null]] as const) {
     const result = prepare(repo, role);
     assert.equal(result.code, 0, result.stderr);
     const files = snapshot(result.out);

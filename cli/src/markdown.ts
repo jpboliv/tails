@@ -84,7 +84,7 @@ function splitRow(line: string): string[] {
   return cells;
 }
 
-export function readBlocks(source: string): PlacedBlock[] {
+export function readDocument(source: string): { lines: string[]; blocks: PlacedBlock[] } {
   const lines = stripComments(source.split(/\r?\n/).map((text, i) => ({ n: i + 1, text }))).map((l) => l.text);
   const out: PlacedBlock[] = [];
   const trail: Heading[] = [];
@@ -163,7 +163,7 @@ export function readBlocks(source: string): PlacedBlock[] {
     push({ kind: "text", line: lineNo, text: raw });
     i++;
   }
-  return out;
+  return { lines, blocks: out };
 }
 
 /** Text of a block's lines, for citation scanning. */

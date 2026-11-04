@@ -23,7 +23,7 @@ try {
   const files = pack.files.map((f) => f.path);
   const compiled = readdirSync(join(root, "src")).filter((f) => f.endsWith(".ts")).map((f) => `dist/src/${f.replace(/\.ts$/, ".js")}`);
   assert.deepEqual(files.filter((f) => f.startsWith("dist/")).sort(), compiled.sort(), "the artifact contains only current runtime modules");
-  assert.ok(files.every((f) => /^(dist\/src\/|schemas\/|skills\/[^/]+\/SKILL\.md$|examples\/feature-flags\/|README\.md$|package\.json$)/.test(f)), "development files are excluded");
+  assert.ok(files.every((f) => /^(dist\/src\/|schemas\/|skills\/[^/]+\/(?:SKILL|adapter)\.md$|examples\/feature-flags\/|README\.md$|package\.json$)/.test(f)), "development files are excluded");
   const prefix = join(temp, "installed");
   npm(["install", "--global", "--prefix", prefix, "--ignore-scripts", "--no-audit", "--no-fund", join(temp, pack.filename)]);
   const bin = join(prefix, "bin", "tails");
@@ -35,6 +35,10 @@ try {
     tails("skills", "prepare", role, "--task", "Inspect the sample specs", "--out", out);
     assert.ok(existsSync(join(out, "skill.md")));
     if (role !== "pr-review") assert.ok(existsSync(join(out, "result.schema.json")));
+    if (role === "conformance") {
+      assert.equal(JSON.parse(readFileSync(join(out, "result.schema.json"), "utf8")).$id, "tails.verdict/2");
+      assert.match(readFileSync(join(out, "prompt.md"), "utf8"), /Structured assessment handoff/);
+    }
   }
   const installed = join(prefix, "lib", "node_modules", "tails");
   assert.equal(JSON.parse(readFileSync(join(installed, "package.json"), "utf8")).version, pkg.version);

@@ -16,7 +16,8 @@ import { serve } from "./serve.js";
 import { renderSite } from "./site.js";
 import { skillsCommand } from "./skills.js";
 import { featureCommand } from "./feature-cli.js";
-import { featureHome } from "./feature.js";
+import { featureHome, githubCli } from "./feature.js";
+import { importAssessment, prepareFeatureAssessment } from "./feature-assessments.js";
 import { toJson } from "./util.js";
 
 const USAGE = `tails: requirement tracking, spec reports and project skills
@@ -33,6 +34,8 @@ const USAGE = `tails: requirement tracking, spec reports and project skills
   tails feature new [--name <name> --prd <link> --tdd <link> --tests <link> --linear <key> --pr <link>...]
                                                              save a feature from its links, then open it
   tails feature <name> [--port 4173] [--no-open] [--no-serve]  read the links again and open the report
+  tails feature prepare <name> --repo <code checkout> --out <new task folder> [--pr <url>]
+  tails feature import <name> --result <result.json> [--report <report.md>]
     Features live in ~/tails-documentation (or --home, or $TAILS_HOME), never in a project.
     Links are GitHub pull requests or files, read with your GitHub CLI login (gh).
 
@@ -106,6 +109,8 @@ export function main(argv: readonly string[]): number | Promise<number> {
       head: { type: "string" },
       port: { type: "string", default: "4173" },
       task: { type: "string" },
+      result: { type: "string" },
+      report: { type: "string" },
       home: { type: "string" },
       name: { type: "string" },
       prd: { type: "string", multiple: true },
@@ -129,7 +134,9 @@ export function main(argv: readonly string[]): number | Promise<number> {
     review: ["repo", "base", "head", "with", "out"],
     serve: ["port"],
     skills: ["repo", "out", "task"],
-    feature: ["home", "name", "prd", "tdd", "tests", "linear", "pr", "no-open", "no-serve", "port"],
+    feature: positionals[0] === "prepare" ? ["home", "repo", "out", "pr"]
+      : positionals[0] === "import" ? ["home", "result", "report"]
+        : ["home", "name", "prd", "tdd", "tests", "linear", "pr", "no-open", "no-serve", "port"],
   };
   for (const token of tokens) {
     if (token.kind === "option" && flags[command] && !flags[command]!.includes(token.name)) {
@@ -139,10 +146,24 @@ export function main(argv: readonly string[]): number | Promise<number> {
 
   switch (command) {
     case "feature": {
+      const home = featureHome(values.home);
+      const [action, slug] = positionals;
+      if (action === "prepare" || action === "import") {
+        if (positionals.length !== 2) throw new TailsInputError(`use tails feature ${action} <name>`);
+        if (action === "prepare") {
+          if (!values.out || !tokens.some((t) => t.kind === "option" && t.name === "repo") || (values.pr?.length ?? 0) > 1) throw new TailsInputError("feature prepare needs --repo <code checkout> --out <new task folder> and optionally one --pr <url>");
+          prepareFeatureAssessment(home, slug!, root, values.pr?.[0], values.out, githubCli);
+        } else {
+          if (!values.result) throw new TailsInputError("feature import needs --result <result.json> and optionally --report <report.md>");
+          const id = importAssessment(home, slug!, values.result, values.report);
+          console.log(`tails feature: imported ${id.slice(0, 12)} for ${slug}. Run tails feature ${slug} to refresh the report.`);
+        }
+        return 0;
+      }
       const port = Number(values.port);
       if (!Number.isInteger(port) || port < 0 || port > 65535) throw new TailsInputError(`--port must be a port number, got "${values.port}"`);
       return featureCommand(positionals, {
-        home: featureHome(values.home),
+        home,
         port,
         open: !values["no-open"],
         serve: !values["no-serve"],
