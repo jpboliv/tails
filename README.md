@@ -27,6 +27,8 @@ The report has three main pages:
 
 Coverage means a document names a requirement. Tails does not run the tests.
 You can also link a Linear ticket and implementation pull requests to the feature.
+Prepare a conformance task for your agent and import its assessment to see requirement-level code
+evidence, deviations, decisions, and outstanding manual checks. See the [conformance guide](cli/README.md#implementation-conformance).
 
 ## Install
 
@@ -89,7 +91,9 @@ No `.env` file, database, API key or hosted service is needed. GitHub access com
 ## First release scope
 
 The CLI indexes specs, checks drift, compares spec revisions, builds local reports, and prepares
-tasks for your agent. Linear tickets are links only; implementation PRs show their GitHub state.
+tasks for your agent. Imported conformance assessments connect requirements to reviewed code and
+retain decisions and spec defects. Tails checks their GitHub code/spec revisions on refresh;
+tracker context comes from the reviewing agent and its current revision remains unverified.
 Tails does not calculate delivery progress or execute agents. Scope-conflict checks are word-based
 and cover the documented table formats; a report with no findings is not proof that arbitrary prose agrees.
 

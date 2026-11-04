@@ -3,11 +3,11 @@
 import type { DocKind, Family } from "./model.js";
 
 export type Position =
-  | { readonly at: "heading" }
+  | { readonly at: "heading"; readonly docs?: readonly DocKind[] }
   /** A bullet that opens with a bold label, in any document or only in the kinds listed. */
   | { readonly at: "bullet"; readonly docs?: readonly DocKind[] }
   /** First word of a table row's first cell, in a matching section or under a matching first header. */
-  | { readonly at: "cell"; readonly section?: RegExp; readonly firstHeader?: RegExp };
+  | { readonly at: "cell"; readonly docs?: readonly DocKind[]; readonly section?: RegExp; readonly firstHeader?: RegExp };
 
 export interface FamilySpec {
   readonly family: Family;
@@ -40,7 +40,7 @@ const FAMILIES: readonly FamilySpec[] = [
   {
     family: "TC",
     name: "test case",
-    positions: [{ at: "heading" }],
+    positions: [{ at: "heading" }, { at: "cell", docs: ["tcs"], firstHeader: /^(?:id|test[ -]?case)$/i }],
     loose: /^TC-\S*/,
     strict: /^TC-\d+$/,
     home: "tcs",
@@ -113,9 +113,9 @@ const FAMILIES: readonly FamilySpec[] = [
     // second dash, so a bold label in prose is never read as a broken ID.
     family: "REC",
     name: "record",
-    positions: [{ at: "bullet", docs: ["tdd"] }],
-    loose: /^[A-Z][A-Z0-9]*-[A-Z][A-Z0-9]*-\d\S*/,
-    strict: /^[A-Z][A-Z0-9]*-[A-Z][A-Z0-9]*-\d+$/,
+    positions: [{ at: "bullet", docs: ["tdd"] }, { at: "heading", docs: ["tdd"] }, { at: "cell", docs: ["tdd"], firstHeader: ID_HEADER }],
+    loose: /^[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)?-\d\S*/,
+    strict: /^[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)?-\d+$/,
     home: "tdd",
     scope: "global",
     ambiguous: false,
@@ -129,7 +129,10 @@ export function familySpec(family: Family): FamilySpec {
 }
 
 /** ID-shaped tokens in running text. Order matters: the first family whose strict pattern matches wins. */
-const CITATION = /(?<![\w-])(FR-\d+(?:\.\d+)?|INV-\d+|TC-\d+|Q-\d+|SC-\d+|D\d+|S\d+|[A-Z][A-Z0-9]*-[A-Z][A-Z0-9]*-\d+)(?![\w-]|\.\d)/g;
+const CITATION = /(?<![\w-])(FR-\d+(?:\.\d+)?|INV-\d+|TC-\d+|Q-\d+|SC-\d+|D\d+|S\d+|[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)?-\d+)(?![\w-]|\.\d)/g;
+
+/** Short record IDs are document-scoped; an ordinary ticket reference is not a record citation. */
+export const isShortRecord = (family: Family, id: string): boolean => family === "REC" && /^[A-Z][A-Z0-9]*-\d+$/.test(id);
 
 export interface Token {
   readonly id: string;
@@ -176,7 +179,8 @@ export function checkDefinition(
   for (const spec of FAMILIES) {
     const fits = spec.positions.some((p) => {
       if (p.at !== at) return false;
-      if (p.at === "bullet") return !p.docs || (context.kind !== undefined && p.docs.includes(context.kind));
+      if (p.docs && (context.kind === undefined || !p.docs.includes(context.kind))) return false;
+      if (p.at === "bullet") return true;
       if (p.at !== "cell") return true;
       if (p.section && !context.sections.some((s) => p.section!.test(s))) return false;
       if (p.firstHeader && !(context.firstHeader !== undefined && p.firstHeader.test(context.firstHeader))) return false;

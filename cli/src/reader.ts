@@ -6,30 +6,13 @@
 // always shows the file as written, and every folded note opens in place.
 import type { DocKind } from "./model.js";
 
-export type Treatment = "fold" | "restyle" | "highlight" | "remove";
 export type RuleId = "verify" | "free" | "guide" | "comment" | "record" | "retired" | "existing" | "blocked";
 
-export interface ReaderRule {
-  readonly id: RuleId;
-  /** The marker as an author writes it. */
-  readonly marker: string;
-  readonly docs: readonly DocKind[];
-  readonly treatment: Treatment;
-  /** What the reader sees instead. */
-  readonly shows: string;
-}
-
-/** The rule table. cli/README.md, "Reader view", repeats it for people. */
-export const READER_RULES: readonly ReaderRule[] = [
-  { id: "verify", marker: "_Verify (IDs):_ paragraph", docs: ["tdd"], treatment: "fold", shows: "Folded under the record as Tests" },
-  { id: "free", marker: "_Free:_ paragraph", docs: ["tdd"], treatment: "fold", shows: "Folded under the record as Free choice" },
-  { id: "guide", marker: "How to read the contracts section", docs: ["tdd"], treatment: "fold", shows: "The whole section folded as Reading guide" },
-  { id: "comment", marker: "<!-- HTML comment -->", docs: ["prd", "tdd", "tcs"], treatment: "remove", shows: "Nothing, as on GitHub" },
-  { id: "record", marker: "Bullet opening with a bold ID: **FF-API-5**, **FR-1.1**", docs: ["prd", "tdd"], treatment: "restyle", shows: "The ID in the margin, the rule as plain text" },
-  { id: "retired", marker: "**FR-n.m** _Retired in rev n._", docs: ["prd"], treatment: "restyle", shows: "A muted line with the ID struck through" },
-  { id: "existing", marker: "_(existing)_", docs: ["tdd"], treatment: "restyle", shows: "A small Existing tag" },
-  { id: "blocked", marker: "**Blocked (clause):** paragraph", docs: ["tdd"], treatment: "highlight", shows: "A callout, because a person must settle it" },
-];
+const RULES: Readonly<Record<DocKind, readonly RuleId[]>> = {
+  prd: ["comment", "record", "retired"],
+  tdd: ["verify", "free", "guide", "comment", "record", "existing", "blocked"],
+  tcs: ["comment"],
+};
 
 /** The rules that apply to one document kind. */
 export interface Reader {
@@ -37,7 +20,7 @@ export interface Reader {
 }
 
 export function readerFor(kind: DocKind): Reader {
-  const on = new Set(READER_RULES.filter((r) => r.docs.includes(kind)).map((r) => r.id));
+  const on = new Set(RULES[kind]);
   return { has: (rule) => on.has(rule) };
 }
 

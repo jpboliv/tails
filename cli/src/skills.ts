@@ -12,7 +12,7 @@ const ASSETS = fileURLToPath(new URL("../../", import.meta.url));
 const RESULTS: Record<SkillRole, { file: string; schema?: string }> = {
   "spec-review": { file: "result.json", schema: "tails.drift-1.schema.json" },
   "pr-review": { file: "result.md" },
-  conformance: { file: "result.json", schema: "tails.verdict-1.schema.json" },
+  conformance: { file: "result.json", schema: "tails.verdict-2.schema.json" },
 };
 
 interface ResolvedSkill {
@@ -126,6 +126,7 @@ function prepareSkill(root: string, skill: ResolvedSkill, task: string, output: 
   const { source } = skill;
   const result = RESULTS[source.role];
   const schema = result.schema ? readText(join(ASSETS, "schemas", result.schema)) : null;
+  const adapter = source.role === "conformance" ? readText(join(ASSETS, "skills/conformance/adapter.md")) : "";
   const resourceNote = source.repo
     ? `The skill comes from Git checkout ${JSON.stringify(source.repo)}, commit ${source.commit}, path ${JSON.stringify(source.path)}.
 Resolve relative references from the skill's original directory within that commit.
@@ -158,6 +159,7 @@ The selected skill replaces the bundled method. Do not add the bundled method's 
 
 Write an explanation of the result and any limits to ${JSON.stringify(join(output, "report.md"))}.
 ${contract}
+${adapter}
 ${source.role === "spec-review" ? 'Use a source name that identifies the selected skill. Cite paths relative to the project and one-based line numbers. Agent findings enter Tails as warnings.\n' : ""}
 ## Source record
 

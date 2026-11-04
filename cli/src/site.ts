@@ -13,6 +13,8 @@ import { DOC_ROLES, ROLE_KIND, type Feature, type PullRequest } from "./feature.
 import { browseControls, browseEmpty, icon } from "./workspace.js";
 import { posix } from "node:path";
 import { compareBy, gist, oneLine, plural } from "./util.js";
+import { assessmentSummary, conformancePage } from "./assessment-site.js";
+import type { AssessmentRun } from "./feature-assessments.js";
 
 export const pageFor = (doc: string) => doc.replace(/\.md$/i, ".html");
 export const sourcePageFor = (doc: string) => doc.replace(/\.md$/i, ".source.html");
@@ -52,6 +54,8 @@ export interface FeatureView {
   readonly feature: Feature;
   /** When Tails read the sources, as people read it: "3 Nov 2026, 14:05". */
   readonly readAt: string;
+  readonly assessments?: readonly AssessmentRun[];
+  readonly assessmentIndex?: SpecIndex;
 }
 
 function sourceLabel(index: SpecIndex): string {
@@ -198,6 +202,7 @@ ${stats([
   { n: String(ctx.open.length), label: "Open findings", l: `${fails.length} blocking · ${ctx.open.length - fails.length} warnings${accepted ? ` · ${accepted} accepted` : ""}`, tone: fails.length ? "fail" : ctx.open.length ? "warn" : "", href: "drift.html" },
 ])}
 ${f ? sourcesHtml(f.feature, path) : ""}
+${f ? assessmentSummary(f.assessments ?? []) : ""}
 <div class="overview-bottom"><section>${sectionHead("epics", f ? "Requirement coverage" : "Epics", "Follow each requirement into the design and test cases.")}
 ${epicRows ? `<ul class="list">${epicRows}</ul>${legend(ORDER, sumCounts(ctx.epics))}` : '<p class="empty">No documents to trace yet.</p>'}</section>
 <section>${sectionHead("rules", "Open findings", "Grouped by check.", '<a href="drift.html">All findings' + icon("arrow") + '</a>')}${rules.length ? `<ul class="list">${ruleRows}</ul>` : '<p class="empty">No findings in the provided documents.</p>'}</section></div>
@@ -548,6 +553,7 @@ export function renderSite(index: SpecIndex, sources: readonly SourceDoc[], find
   files.set("index.html", overview(ctx));
   files.set("drift.html", findingsHtml(ctx));
   files.set("docs.html", docsHtml(ctx));
+  if (feature) files.set("conformance.html", conformancePage(feature.assessmentIndex ?? index, feature.assessments ?? [], feature.feature.spec.name, feature.feature.implementation.map((p) => `${p.repo}#${p.number}`)));
   for (const e of ctx.epics) files.set(epicPage(e.group), epicHtml(ctx, e));
   for (const e of index.entries) files.set(idPage(e), idHtml(ctx, e, reqOf.get(e.key)));
   for (const src of sources) {

@@ -1,0 +1,137 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "tails.verdict/2",
+  "title": "Requirement-level conformance assessment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "checker", "checked_at", "pr", "scope", "sources", "overall", "summary", "results", "decisions", "spec_defects", "manual_checks", "not_checked"],
+  "properties": {
+    "schema": { "const": "tails.verdict/2" },
+    "checker": {
+      "type": "object", "additionalProperties": false, "required": ["name", "version"],
+      "properties": { "name": { "$ref": "#/definitions/text" }, "version": { "$ref": "#/definitions/text" } }
+    },
+    "checked_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$" },
+    "pr": {
+      "type": "object", "additionalProperties": false, "required": ["repo", "number", "head_sha"],
+      "properties": {
+        "repo": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
+        "number": { "type": "integer", "minimum": 1 },
+        "head_sha": { "$ref": "#/definitions/sha" }
+      }
+    },
+    "scope": {
+      "type": "object", "additionalProperties": false, "required": ["basis", "tickets", "description"],
+      "properties": {
+        "basis": { "enum": ["ticket", "inferred"] },
+        "tickets": { "$ref": "#/definitions/strings" },
+        "description": { "$ref": "#/definitions/text" }
+      }
+    },
+    "sources": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["key", "kind", "location", "revision", "purpose"],
+        "properties": {
+          "key": { "$ref": "#/definitions/text" },
+          "kind": { "enum": ["prd", "tdd", "tcs", "ticket"] },
+          "location": { "$ref": "#/definitions/text" },
+          "revision": { "$ref": "#/definitions/text" },
+          "purpose": { "enum": ["baseline", "proposed"] }
+        }
+      }
+    },
+    "overall": { "enum": ["conforms", "does_not_conform", "cannot_check"] },
+    "summary": { "$ref": "#/definitions/text" },
+    "results": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["key", "id", "source", "requirement", "derived", "verdict", "spec", "code", "note", "decision_ids", "defect_ids", "moved_to"],
+        "properties": {
+          "key": { "$ref": "#/definitions/text" },
+          "id": { "$ref": "#/definitions/text" },
+          "source": { "$ref": "#/definitions/text" },
+          "requirement": { "$ref": "#/definitions/text" },
+          "derived": { "type": "boolean" },
+          "verdict": { "enum": ["met", "missing", "deviates", "not_checkable", "blocked", "moved", "unresolved"] },
+          "spec": { "$ref": "#/definitions/specEvidence" },
+          "code": { "type": "array", "items": { "$ref": "#/definitions/codeEvidence" } },
+          "note": { "type": "string" },
+          "decision_ids": { "$ref": "#/definitions/strings" },
+          "defect_ids": { "$ref": "#/definitions/strings" },
+          "moved_to": { "type": ["string", "null"], "minLength": 1 }
+        }
+      }
+    },
+    "decisions": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "kind", "results", "spec_says", "pr_does", "impact", "change_pr", "update_specs", "who_decides", "declared", "documentation_prs"],
+        "properties": {
+          "id": { "$ref": "#/definitions/text" },
+          "kind": { "enum": ["missing", "deviates", "addition", "early_work", "decides_blocked"] },
+          "results": { "$ref": "#/definitions/strings" },
+          "spec_says": { "$ref": "#/definitions/text" },
+          "pr_does": { "$ref": "#/definitions/text" },
+          "impact": { "$ref": "#/definitions/text" },
+          "change_pr": { "$ref": "#/definitions/text" },
+          "update_specs": {
+            "type": "array", "minItems": 1, "items": {
+              "type": "object", "additionalProperties": false, "required": ["source", "change"],
+              "properties": { "source": { "$ref": "#/definitions/text" }, "change": { "$ref": "#/definitions/text" } }
+            }
+          },
+          "who_decides": { "$ref": "#/definitions/text" },
+          "declared": { "type": "boolean" },
+          "documentation_prs": { "$ref": "#/definitions/strings" }
+        }
+      }
+    },
+    "spec_defects": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "kind", "results", "evidence", "message", "suggested_change"],
+        "properties": {
+          "id": { "$ref": "#/definitions/text" },
+          "kind": { "enum": ["contradiction", "vague", "missing_id", "undefined_id", "duplicate_id", "missing_contract", "process_gap"] },
+          "results": { "$ref": "#/definitions/strings" },
+          "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/definitions/specEvidence" } },
+          "message": { "$ref": "#/definitions/text" },
+          "suggested_change": { "$ref": "#/definitions/text" }
+        }
+      }
+    },
+    "manual_checks": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false, "required": ["result", "where", "check", "expected"],
+        "properties": {
+          "result": { "$ref": "#/definitions/text" }, "where": { "$ref": "#/definitions/text" },
+          "check": { "$ref": "#/definitions/text" }, "expected": { "$ref": "#/definitions/text" }
+        }
+      }
+    },
+    "not_checked": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false, "required": ["source", "reason"],
+        "properties": { "source": { "$ref": "#/definitions/text" }, "reason": { "$ref": "#/definitions/text" } }
+      }
+    }
+  },
+  "definitions": {
+    "text": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "sha": { "type": "string", "pattern": "^[a-f0-9]{40}(?:[a-f0-9]{24})?$" },
+    "strings": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/definitions/text" } },
+    "specEvidence": {
+      "type": "object", "additionalProperties": false, "required": ["source", "line", "quote"],
+      "properties": {
+        "source": { "$ref": "#/definitions/text" },
+        "line": { "type": ["integer", "null"], "minimum": 1 },
+        "quote": { "$ref": "#/definitions/text" }
+      }
+    },
+    "codeEvidence": {
+      "type": "object", "additionalProperties": false, "required": ["path", "line", "quote"],
+      "properties": { "path": { "$ref": "#/definitions/text" }, "line": { "type": "integer", "minimum": 1 }, "quote": { "$ref": "#/definitions/text" } }
+    }
+  }
+}

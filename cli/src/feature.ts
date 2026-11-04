@@ -158,8 +158,8 @@ export const REPORTS = "reports";
 
 /** A feature name is one filename, never a path or a command. */
 export function checkSlug(slug: string): void {
-  if (!/^[a-z0-9][a-z0-9_-]*$/i.test(slug) || ["new", "list"].includes(slug.toLowerCase())) {
-    throw new TailsInputError(`invalid feature name "${slug}"; use letters, numbers, hyphens or underscores, starting with a letter or number (not new or list)`);
+  if (!/^[a-z0-9][a-z0-9_-]*$/i.test(slug) || ["new", "list", "prepare", "import"].includes(slug.toLowerCase())) {
+    throw new TailsInputError(`invalid feature name "${slug}"; use letters, numbers, hyphens or underscores, starting with a letter or number (not new, list, prepare or import)`);
   }
 }
 

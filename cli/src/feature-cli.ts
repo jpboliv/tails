@@ -26,11 +26,12 @@ import {
   type FeatureSpec,
   type GitHub,
 } from "./feature.js";
-import { buildIndex } from "./indexer.js";
-import { TailsInputError } from "./model.js";
+import { buildIndex, type SourceDoc } from "./indexer.js";
+import { TailsInputError, type DocPath, type SpecIndex } from "./model.js";
 import { serve } from "./serve.js";
 import { renderSite } from "./site.js";
 import { toJson } from "./util.js";
+import { assessFreshness, featureSnapshots, readAssessments } from "./feature-assessments.js";
 
 export interface FeatureOptions {
   readonly home: string;
@@ -51,8 +52,23 @@ export const readAtLabel = (d: Date): string =>
 export function renderFeature(home: string, slug: string, github: GitHub, readAt: string): { dir: string; ids: number; open: number; failing: number; docs: number } {
   const spec = readFeature(home, slug);
   const feature = buildFeature(spec, slug, github);
+  const stored = readAssessments(home, slug);
+  const snapshots = stored.length ? featureSnapshots(feature, github) : [];
+  const assessments = assessFreshness(stored, feature, snapshots);
   if (feature.docs.length === 0) throw new TailsInputError(`${slug}: no documents found in the linked pull requests`);
-  const index = buildIndex(feature.docs, DEFAULT_CONFIG, { refs: feature.sources.map((s) => s.readFrom), group: feature.linear?.key ?? slug });
+  const notes = [...feature.notes];
+  const indexSources = (sources: readonly SourceDoc[]): SpecIndex => {
+    const options = { refs: feature.sources.map((s) => s.readFrom), group: feature.linear?.key ?? slug };
+    try { return buildIndex(sources, DEFAULT_CONFIG, options); }
+    catch (e) {
+      if (!stored.length || !(e instanceof TailsInputError)) throw e;
+      notes.push(`Spec indexing unavailable: ${e.message}. Read the source and imported spec defects; document coverage was not assessed.`);
+      return { ...buildIndex([], DEFAULT_CONFIG, options), docs: sources.map((s) => ({ path: s.path, kind: s.kind, title: s.path, epic: null, group: options.group, ...(s.source ? { source: s.source } : {}) })) };
+    }
+  };
+  const index = indexSources(feature.docs);
+  const baseline = snapshots.filter((s) => s.purpose === "baseline").map((s): SourceDoc => ({ path: s.location as DocPath, kind: s.kind, text: s.text, source: { ref: "conformance baseline", commit: s.revision } }));
+  const assessmentIndex = stored.length ? indexSources(baseline) : index;
   const findings = runRules({ index, config: DEFAULT_CONFIG, prdChanges: null });
   const report: DriftReport = { schema: "tails.drift/1", source: "tails", commit: null, findings };
   const dir = join(home, REPORTS, slug);
@@ -63,7 +79,7 @@ export function renderFeature(home: string, slug: string, github: GitHub, readAt
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
     }
   }
-  const pages = renderSite(index, feature.docs, findings, { feature, readAt });
+  const pages = renderSite(index, feature.docs, findings, { feature: { ...feature, notes }, readAt, assessments, assessmentIndex });
   rmSync(dir, { recursive: true, force: true });
   const write = (path: string, text: string) => {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
@@ -72,6 +88,7 @@ export function renderFeature(home: string, slug: string, github: GitHub, readAt
   write("index.json", toJson(index));
   write("drift.json", toJson(report));
   write("drift.md", driftMarkdown(report));
+  write("assessments.json", toJson(assessments));
   for (const [path, html] of pages) write(join("site", path), html);
   const open = findings.filter((f) => f.status === "open");
   return { dir, ids: index.entries.length, open: open.length, failing: open.filter((f) => f.severity === "fail").length, docs: feature.docs.length };

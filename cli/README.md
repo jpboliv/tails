@@ -163,7 +163,7 @@ To use another folder, pass `--home <folder>` or set `TAILS_HOME`.
 This is the CLI's only application-specific environment variable. Tails does not load `.env` files.
 `gh auth login` supplies GitHub credentials; no GitHub App, Linear OAuth app or model API key is needed.
 Saved feature names use letters, numbers, hyphens or underscores and start with a letter or number.
-`new` and `list` are reserved commands.
+`new`, `list`, `prepare` and `import` are reserved commands.
 
 ## What the report shows
 
@@ -216,14 +216,15 @@ Tails finds IDs in the documents and follows the links between them.
 | ID | Example | Where a document defines it |
 | --- | --- | --- |
 | Requirement | `FR-1.1` | A PRD list item or heading |
-| Test case | `TC-01` | A heading in the test cases |
-| Record | `FF-API-05` | A TDD list item that starts with the bold ID. `**A-B-1**, **C-D-2**` defines both. |
+| Test case | `TC-01` | A heading, or a table row whose first column is `Test case` or `ID` |
+| Record | `FF-API-05`, `WL-01` | A TDD bullet or heading starting with the ID; bullets use bold IDs. `**A-B-1**, **C-D-2**` defines both. |
 | Matrix row | `BK-API-42` | The first cell of a table whose first column is `ID` |
 | Decision, invariant, open question | `D3`, `INV-2`, `Q-1` | The first cell of a table in the matching section |
 
 A test case covers a requirement in one of two ways:
 
 - a `**Covers:** FR-1.1, FR-1.2` line under the test case
+- a test-case table with `Test case`, `Covers`, and the case's steps/expected outcome
 - a coverage table in the test cases, with an `FR` column and a `Test cases` column:
 
   ```markdown
@@ -236,8 +237,11 @@ A test case covers a requirement in one of two ways:
 A record in the TDD that names a requirement, such as `(PRD FR-1.1)`, counts as its design.
 A retired requirement keeps its ID but needs no design and no test.
 
-Record IDs have the form `PREFIX-AREA-n`. Tails shows a short ID such as `WL-01` in the margin, but
-it does not index it, because a short ID looks the same as a ticket key such as `ACME-12`.
+Long record IDs (`PREFIX-AREA-n`) are unique across the index. Short IDs (`WL-01`) are scoped to
+their document. A short reference is treated as a record only when its group defines that prefix;
+ordinary ticket references remain unindexed. Ambiguous cross-document short references stay unresolved.
+Records include their nested prose, tables, code blocks and every `_Verify` paragraph naming the
+ID. Changes to that contract or its verification instructions appear in revision comparisons.
 
 ## What Tails checks
 
@@ -354,6 +358,65 @@ agent. For a spec review, the agent writes `result.json`, and
 
 `tails skills init <role>` copies a default skill into the project so that you can change it. It
 is the only command that writes into a project, and only when you run it.
+
+### Implementation conformance
+
+Select Deemaze's merged skill in the code checkout's `.tails.yml`:
+
+```yaml
+skills:
+  conformance:
+    repo: ../deemaze-skills
+    ref: main
+    path: plugins/spec-conformance/skills/spec-conformance/SKILL.md
+```
+
+The handoff records the exact skill commit. Use a tag or commit for a fixed team version.
+The existing local `path` override works too; without an override Tails uses its bundled skill.
+
+Once the feature links its specs and implementation PRs:
+
+```sh
+tails feature prepare feature-flags --repo ../api \
+  --pr https://github.com/acme/api/pull/42 \
+  --out "$HOME/tails-documentation/tasks/feature-flags-42"
+```
+
+Give that folder's `prompt.md` to your agent. It contains the selected skill, its supporting-file
+location, the `tails.verdict/2` result contract and a serialization guide. `context.json` supplies
+the feature documents and reviewed PR head. The agent fetches the PR's actual tickets and scope.
+An open documentation PR supplies both its proposed head and the current base-branch specification;
+conformance verdicts use the baseline. If the spec exists only in the proposal, it has no accepted
+baseline yet. `--pr` can be omitted when exactly one implementation PR is linked.
+
+The agent writes its full `report.md` and structured `result.json`. Import the assessment:
+
+```sh
+tails feature import feature-flags \
+  --result "$HOME/tails-documentation/tasks/feature-flags-42/result.json"
+tails feature feature-flags
+```
+
+Import also retains `report.md` beside the result when present; `--report <path>` chooses another
+file. It validates the schema, evidence locations, requirement identities, reciprocal decision/defect
+links, and overall verdict. The PR must belong to the feature. An identical import is idempotent.
+
+The overview links to **Implementation assessments**. It shows requirement outcomes with pinned
+spec/code evidence, both options for each decision, spec defects, manual checks, unavailable inputs,
+and the original report. **Conforms means no decisions are needed**; blocked requirements and manual
+checks can remain. Test source is not proof of a passing run or deployment.
+
+On refresh, code and linked GitHub spec revisions are compared with each assessment. Changed inputs
+make it **outdated**. Sources Tails cannot refresh, including tracker documents and ticket content,
+make it **unverified**. All evidence remains readable, but only current, latest assessments contribute
+to the breakdown. A newer review supersedes older reviews of the same PR; different PR outcomes stay
+visible as **Mixed PR outcomes**. Requirements and PRs without current assessments remain unassessed.
+The breakdown describes reviewed PR scopes, not whole-feature delivery.
+
+Assessments live in `~/tails-documentation/assessments/<feature>/` and survive report regeneration.
+The report exports their freshness and retained results in `assessments.json`. Malformed or duplicate
+spec IDs still appear as indexing errors; imported assessments and their spec defects remain readable.
+The older `tails.verdict/1` schema remains packaged, but new conformance handoffs and imports use v2.
 
 ## Develop Tails
 

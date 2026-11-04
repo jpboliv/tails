@@ -39,6 +39,10 @@ export interface Definition extends Place {
   readonly text_hash: TextHash;
   /** Table cells by column header, for definitions made in a table row. */
   readonly cells?: Readonly<Record<string, string>>;
+  /** Contract source span, including nested prose, tables and fenced code. */
+  readonly end_line?: number;
+  /** Every verification paragraph naming this record, including shared paragraphs elsewhere. */
+  readonly verification?: readonly { readonly line: number; readonly text: string }[];
 }
 
 export type LinkKind = "covers" | "sources" | "cites";
